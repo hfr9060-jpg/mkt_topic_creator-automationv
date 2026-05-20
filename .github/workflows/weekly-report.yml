@@ -26,5 +26,11 @@ jobs:
               \"weekEnd\": \"$WEEK_END\",
               \"metricsSummary\": \"GitHub Actions scheduled weekly report trigger. No social platform metrics were provided in this run.\",
               \"notes\": \"If metrics are missing, generate a conservative weekly planning report and clearly state data limitations.\",
+              \"includeSearch\": true,
+              \"searchQueries\": [
+                \"AI creator economy trending topics this week\",
+                \"x.com trending AI tools and agents this week\",
+                \"content creator automation AI trends this week\"
+              ],
               \"saveReport\": true
             }"
