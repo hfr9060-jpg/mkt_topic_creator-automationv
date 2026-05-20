@@ -29,6 +29,12 @@ interface TavilySearchResponse {
   error?: string;
 }
 
+interface ParsedResponseBody<T> {
+  text: string;
+  json?: T;
+  parseError?: string;
+}
+
 export class TavilySearchClient {
   private readonly apiKey: string;
   private readonly logger: Logger;
@@ -50,26 +56,64 @@ export class TavilySearchClient {
       maxResults: input.maxResults ?? 5
     });
 
-    const response = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        api_key: this.apiKey,
+    const endpoint = "https://api.tavily.com/search";
+    let response: Response;
+
+    try {
+      this.logger.info("Tavily search request started", {
+        endpoint,
         query,
-        max_results: input.maxResults ?? 5,
-        search_depth: input.searchDepth ?? "basic",
-        include_answer: false,
-        include_raw_content: false
-      })
+        maxResults: input.maxResults ?? 5,
+        searchDepth: input.searchDepth ?? "basic"
+      });
+
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          api_key: this.apiKey,
+          query,
+          max_results: input.maxResults ?? 5,
+          search_depth: input.searchDepth ?? "basic",
+          include_answer: false,
+          include_raw_content: false
+        })
+      });
+    } catch (error) {
+      this.logger.error("Tavily search fetch threw before response", {
+        endpoint,
+        query,
+        error
+      });
+      throw error;
+    }
+
+    const contentType = response.headers.get("content-type");
+    const body = await readResponseBody<TavilySearchResponse>(response, "Tavily");
+
+    this.logger.info("Tavily search response received", {
+      endpoint,
+      query,
+      status: response.status,
+      ok: response.ok,
+      contentType,
+      responseBody: body.text,
+      jsonParseError: body.parseError
     });
 
-    const payload = (await response.json()) as TavilySearchResponse;
-
     if (!response.ok) {
-      throw new Error(payload.error ?? `Tavily request failed: ${response.status}`);
+      throw new Error(
+        body.json?.error ?? `Tavily request failed: ${response.status}. Body: ${body.text}`
+      );
     }
+
+    if (!body.json) {
+      throw new Error(buildJsonParseFailureMessage("Tavily", body));
+    }
+
+    const payload = body.json;
 
     const results =
       payload.results?.flatMap((result) => {
@@ -104,4 +148,45 @@ export function createSearchClient(config: AppConfig): TavilySearchClient {
   return new TavilySearchClient({
     apiKey: config.tavily.apiKey
   });
+}
+
+async function readResponseBody<T>(
+  response: Response,
+  apiName: string
+): Promise<ParsedResponseBody<T>> {
+  const text = await response.text();
+
+  console.log(`${apiName} API response:`, text);
+
+  if (text.trim().length === 0) {
+    return {
+      text,
+      parseError: `${apiName} returned an empty response`
+    };
+  }
+
+  try {
+    return {
+      text,
+      json: JSON.parse(text) as T
+    };
+  } catch (error) {
+    return {
+      text,
+      parseError: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function buildJsonParseFailureMessage(
+  apiName: string,
+  body: ParsedResponseBody<unknown>
+): string {
+  if (body.text.trim().length === 0) {
+    return `${apiName} returned an empty response`;
+  }
+
+  return `${apiName} returned a non-JSON response. Parse error: ${
+    body.parseError ?? "unknown"
+  }. Body: ${body.text}`;
 }

@@ -2,6 +2,7 @@ export type AppEnv = "development" | "staging" | "production";
 
 export interface Env {
   APP_ENV?: AppEnv;
+  WORKER_SECRET?: string;
   LLM_PROVIDER?: "deepseek";
   DEEPSEEK_API_KEY: string;
   DEEPSEEK_MODEL?: string;

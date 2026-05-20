@@ -26,6 +26,12 @@ interface TelegramMessageResult {
   text?: string;
 }
 
+interface ParsedResponseBody<T> {
+  text: string;
+  json?: T;
+  parseError?: string;
+}
+
 export class TelegramClient {
   private readonly botToken: string;
   private readonly chatId: string;
@@ -45,27 +51,83 @@ export class TelegramClient {
       throw new Error("Telegram message text cannot be empty");
     }
 
-    const response = await fetch(this.endpoint("sendMessage"), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        chat_id: options.chatId ?? this.chatId,
-        text,
-        parse_mode: options.parseMode,
-        disable_web_page_preview: options.disableWebPagePreview ?? true
-      })
+    const endpoint = this.endpoint("sendMessage");
+    const targetChatId = options.chatId ?? this.chatId;
+    const requestBody = {
+      chat_id: targetChatId,
+      text,
+      parse_mode: options.parseMode,
+      disable_web_page_preview: options.disableWebPagePreview ?? true
+    };
+
+    let response: Response;
+
+    try {
+      this.logger.info("Telegram sendMessage request started", {
+        endpoint: "sendMessage",
+        chatId: targetChatId,
+        textLength: text.length,
+        parseMode: options.parseMode,
+        disableWebPagePreview: requestBody.disable_web_page_preview
+      });
+
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(requestBody)
+      });
+    } catch (error) {
+      this.logger.error("Telegram sendMessage fetch threw before response", {
+        endpoint: "sendMessage",
+        chatId: targetChatId,
+        error
+      });
+      throw error;
+    }
+
+    const contentType = response.headers.get("content-type");
+    const body = await readResponseBody<TelegramApiResponse<TelegramMessageResult>>(
+      response,
+      "Telegram sendMessage"
+    );
+
+    this.logger.info("Telegram sendMessage response received", {
+      endpoint: "sendMessage",
+      status: response.status,
+      ok: response.ok,
+      contentType,
+      responseBody: body.text,
+      jsonParseError: body.parseError
     });
 
-    const payload =
-      (await response.json()) as TelegramApiResponse<TelegramMessageResult>;
+    if (!response.ok) {
+      this.logger.error("Telegram message delivery failed with HTTP error", {
+        status: response.status,
+        contentType,
+        responseBody: body.text,
+        jsonParseError: body.parseError
+      });
 
-    if (!response.ok || !payload.ok || !payload.result) {
+      throw new Error(
+        body.json?.description ??
+          `Telegram API request failed: ${response.status}. Body: ${body.text}`
+      );
+    }
+
+    if (!body.json) {
+      throw new Error(buildJsonParseFailureMessage("Telegram sendMessage", body));
+    }
+
+    const payload = body.json;
+
+    if (!payload.ok || !payload.result) {
       this.logger.error("Telegram message delivery failed", {
         status: response.status,
         errorCode: payload.error_code,
-        description: payload.description
+        description: payload.description,
+        responseBody: body.text
       });
 
       throw new Error(
@@ -90,4 +152,45 @@ export function createTelegramClient(config: AppConfig): TelegramClient {
     botToken: config.telegram.botToken,
     chatId: config.telegram.chatId
   });
+}
+
+async function readResponseBody<T>(
+  response: Response,
+  apiName: string
+): Promise<ParsedResponseBody<T>> {
+  const text = await response.text();
+
+  console.log(`${apiName} API response:`, text);
+
+  if (text.trim().length === 0) {
+    return {
+      text,
+      parseError: `${apiName} returned an empty response`
+    };
+  }
+
+  try {
+    return {
+      text,
+      json: JSON.parse(text) as T
+    };
+  } catch (error) {
+    return {
+      text,
+      parseError: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function buildJsonParseFailureMessage(
+  apiName: string,
+  body: ParsedResponseBody<unknown>
+): string {
+  if (body.text.trim().length === 0) {
+    return `${apiName} returned an empty response`;
+  }
+
+  return `${apiName} returned a non-JSON response. Parse error: ${
+    body.parseError ?? "unknown"
+  }. Body: ${body.text}`;
 }

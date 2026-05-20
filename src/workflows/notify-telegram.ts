@@ -30,14 +30,33 @@ export async function notifyTelegram(
   const message = formatTelegramMessage(input);
 
   workflowLogger.info("Telegram notification started", {
-    title: input.title
+    title: input.title,
+    messageLength: message.length,
+    hasFooter: Boolean(input.footer)
   });
 
-  const result = await dependencies.telegram.sendMessage(message);
+  let result: Awaited<ReturnType<TelegramClient["sendMessage"]>>;
 
-  workflowLogger.info("Telegram notification completed", {
-    messageId: result.message_id
-  });
+  try {
+    workflowLogger.info("Telegram sendMessage call started", {
+      title: input.title,
+      messageLength: message.length
+    });
+
+    result = await dependencies.telegram.sendMessage(message);
+
+    workflowLogger.info("Telegram sendMessage call completed", {
+      title: input.title,
+      messageId: result.message_id
+    });
+  } catch (error) {
+    workflowLogger.error("Telegram sendMessage call failed", {
+      title: input.title,
+      messageLength: message.length,
+      error
+    });
+    throw error;
+  }
 
   return {
     messageId: result.message_id

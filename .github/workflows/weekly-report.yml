@@ -14,7 +14,17 @@ jobs:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
         run: |
-          curl -X POST "$WORKER_URL/weekly-report" \
+          WEEK_END="$(date -u +%F)"
+          WEEK_START="$(date -u -d "$WEEK_END - 6 days" +%F)"
+
+          curl --fail-with-body -X POST "$WORKER_URL/weekly-report" \
             -H "Authorization: Bearer $WORKER_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{}'
+            --data "{
+              \"creatorName\": \"Leanna\",
+              \"weekStart\": \"$WEEK_START\",
+              \"weekEnd\": \"$WEEK_END\",
+              \"metricsSummary\": \"GitHub Actions scheduled weekly report trigger. No social platform metrics were provided in this run.\",
+              \"notes\": \"If metrics are missing, generate a conservative weekly planning report and clearly state data limitations.\",
+              \"saveReport\": true
+            }"

@@ -51,6 +51,12 @@ interface ChatCompletionResponse {
   };
 }
 
+interface ParsedResponseBody<T> {
+  text: string;
+  json?: T;
+  parseError?: string;
+}
+
 const DEFAULT_MODEL = "deepseek-chat";
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MAX_TOKENS = 1800;
@@ -91,36 +97,77 @@ export class LlmClient {
       temperature
     });
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        temperature,
-        messages: [
-          {
-            role: "system",
-            content: options.systemPrompt ?? CREATOR_ASSISTANT_SYSTEM_PROMPT
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
-      })
-    });
+    const endpoint = `${trimTrailingSlash(this.baseUrl)}/chat/completions`;
+    let response: Response;
 
-    const payload = (await response.json()) as ChatCompletionResponse;
+    try {
+      this.logger.info("DeepSeek chat completions request started", {
+        provider: "deepseek",
+        endpoint,
+        model,
+        maxTokens,
+        temperature,
+        promptLength: prompt.length
+      });
+
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          temperature,
+          messages: [
+            {
+              role: "system",
+              content: options.systemPrompt ?? CREATOR_ASSISTANT_SYSTEM_PROMPT
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ]
+        })
+      });
+    } catch (error) {
+      this.logger.error("DeepSeek chat completions fetch threw before response", {
+        endpoint,
+        error
+      });
+      throw error;
+    }
+
+    const contentType = response.headers.get("content-type");
+    const body = await readResponseBody<ChatCompletionResponse>(
+      response,
+      "DeepSeek chat completions"
+    );
+
+    this.logger.info("DeepSeek chat completions response received", {
+      provider: "deepseek",
+      endpoint,
+      status: response.status,
+      ok: response.ok,
+      contentType,
+      responseBody: body.text,
+      jsonParseError: body.parseError
+    });
 
     if (!response.ok) {
       throw new Error(
-        payload.error?.message ?? `LLM API request failed: ${response.status}`
+        body.json?.error?.message ??
+          `DeepSeek chat completions request failed: ${response.status}. Body: ${body.text}`
       );
     }
+
+    if (!body.json) {
+      throw new Error(buildJsonParseFailureMessage("DeepSeek chat completions", body));
+    }
+
+    const payload = body.json;
 
     const text = payload.choices?.[0]?.message?.content?.trim();
 
@@ -159,4 +206,49 @@ export function createLlmClient(config: AppConfig): LlmClient {
     model: config.llm.model,
     baseUrl: config.llm.baseUrl
   });
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+async function readResponseBody<T>(
+  response: Response,
+  apiName: string
+): Promise<ParsedResponseBody<T>> {
+  const text = await response.text();
+
+  console.log(`${apiName} API response:`, text);
+
+  if (text.trim().length === 0) {
+    return {
+      text,
+      parseError: `${apiName} returned an empty response`
+    };
+  }
+
+  try {
+    return {
+      text,
+      json: JSON.parse(text) as T
+    };
+  } catch (error) {
+    return {
+      text,
+      parseError: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function buildJsonParseFailureMessage(
+  apiName: string,
+  body: ParsedResponseBody<unknown>
+): string {
+  if (body.text.trim().length === 0) {
+    return `${apiName} returned an empty response`;
+  }
+
+  return `${apiName} returned a non-JSON response. Parse error: ${
+    body.parseError ?? "unknown"
+  }. Body: ${body.text}`;
 }

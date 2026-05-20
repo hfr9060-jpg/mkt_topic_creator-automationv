@@ -11,7 +11,6 @@ import {
 } from "./workflows/generate-weekly-report";
 import {
   notifyTelegram,
-  notifyWeeklyReport,
   type NotifyTelegramInput
 } from "./workflows/notify-telegram";
 import {
@@ -87,6 +86,7 @@ async function handleGenerateWeeklyReport(
   const input = await readJson<GenerateWeeklyReportInput>(request);
   const result = await generateWeeklyReport(input, {
     claude: createClaudeClient(env),
+    telegram: createTelegramClient(env),
     reportsRepo: input.saveReport === false ? undefined : createReportsRepo(env)
   });
 
@@ -123,22 +123,14 @@ async function handleGenerateWeeklyReportAndNotify(
   const telegram = createTelegramClient(env);
   const report = await generateWeeklyReport(input, {
     claude: createClaudeClient(env),
+    telegram,
     reportsRepo: input.saveReport === false ? undefined : createReportsRepo(env)
   });
-  const notification = await notifyWeeklyReport(
-    {
-      report,
-      footer: input.notificationFooter
-    },
-    {
-      telegram
-    }
-  );
 
   return jsonResponse({
     ok: true,
     report,
-    notification
+    notification: report.notification
   });
 }
 
