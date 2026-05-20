@@ -14,5 +14,7 @@ jobs:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
         run: |
-          curl -X POST $WORKER_URL/weekly-report \
-            -H "Authorization: Bearer $WORKER_SECRET"
+          curl -X POST "$WORKER_URL/weekly-report" \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{}'
