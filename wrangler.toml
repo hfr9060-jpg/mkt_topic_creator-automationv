@@ -1,0 +1,26 @@
+name = "creator-automation"
+main = "src/index.ts"
+compatibility_date = "2026-05-16"
+
+[vars]
+APP_ENV = "development"
+
+[[kv_namespaces]]
+binding = "CREATOR_AUTOMATION_KV"
+id = "e47ce6d3b642468db96fe8b1a3792abc"
+preview_id = "replace-with-preview-kv-id"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "creator-automation"
+database_id = "94affdd8-44ed-4afa-8423-f9185e1cf1fb"
+
+[[r2_buckets]]
+binding = "REPORTS_BUCKET"
+bucket_name = "creator-automation-reports"
+
+[triggers]
+crons = [
+  "0 1 * * *",
+  "0 2 * * 1"
+]
