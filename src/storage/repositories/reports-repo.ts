@@ -53,7 +53,15 @@ export class ReportsRepository {
         period_end,
         metadata_json,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        type = excluded.type,
+        title = excluded.title,
+        content = excluded.content,
+        period_start = excluded.period_start,
+        period_end = excluded.period_end,
+        metadata_json = excluded.metadata_json,
+        created_at = excluded.created_at`,
       input.id,
       input.type,
       input.title,
